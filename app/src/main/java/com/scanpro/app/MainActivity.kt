@@ -146,6 +146,7 @@ if (showPdfStudio) {
         )
 1 -> DocumentManagerScreen(
     files = files,
+    rootDirectory = File(context.filesDir, "scans"),
     onOpen = { openPdf(context, it) },
     onShare = { sharePdf(context, it) },
     onRefresh = {
@@ -273,9 +274,23 @@ private fun copyIntoAppStorage(context: Context, uri: Uri, fileName: String): Fi
 
 private fun loadFiles(context: Context): List<ScanFile> {
     val dir = File(context.filesDir, "scans")
-    return dir.listFiles()?.filter { it.extension.equals("pdf", true) }?.sortedByDescending { it.lastModified() }?.map {
-        ScanFile(it.name, it.absolutePath, 1, SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("id", "ID")).format(Date(it.lastModified())))
-    } ?: emptyList()
+    if (!dir.exists()) dir.mkdirs()
+
+    return dir.walkTopDown()
+        .filter { it.isFile && it.extension.equals("pdf", true) }
+        .sortedByDescending { it.lastModified() }
+        .map {
+            ScanFile(
+                it.name,
+                it.absolutePath,
+                1,
+                SimpleDateFormat(
+                    "dd MMM yyyy, HH:mm",
+                    Locale("id", "ID")
+                ).format(Date(it.lastModified()))
+            )
+        }
+        .toList()
 }
 
 private fun saveFiles(context: Context, files: List<ScanFile>) { /* Files are reloaded from the app's private scans directory. */ }
