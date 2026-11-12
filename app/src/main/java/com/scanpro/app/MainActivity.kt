@@ -144,12 +144,14 @@ if (showPdfStudio) {
             onPdfStudio = { showPdfStudio = true },
             padding = padding
         )
-        1 -> DocumentsScreen(
-            files,
-            onOpen = { openPdf(context, it) },
-            onShare = { sharePdf(context, it) },
-            padding = padding
-        )
+1 -> DocumentManagerScreen(
+    files = files,
+    onOpen = { openPdf(context, it) },
+    onShare = { sharePdf(context, it) },
+    onRefresh = {
+        files = loadFiles(context)
+    }
+)
         else -> SettingsScreen(padding)
     }
 }
