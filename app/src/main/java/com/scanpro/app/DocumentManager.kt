@@ -28,6 +28,7 @@ private val DMCanvas = Color(0xFFF5F7FB)
 @Composable
 fun DocumentManagerScreen(
     files: List<ScanFile>,
+    rootDirectory: File,
     onOpen: (ScanFile) -> Unit,
     onShare: (ScanFile) -> Unit,
     onRefresh: () -> Unit
@@ -35,13 +36,38 @@ fun DocumentManagerScreen(
     var search by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf("Terbaru") }
     var sortExpanded by remember { mutableStateOf(false) }
+    var selectedFolder by remember { mutableStateOf<String?>(null) }
+
+    var showCreateFolder by remember { mutableStateOf(false) }
+    var showMoveDialog by remember { mutableStateOf<ScanFile?>(null) }
+    var renameFolder by remember { mutableStateOf<String?>(null) }
+    var deleteFolder by remember { mutableStateOf<String?>(null) }
+
+    var folderName by remember { mutableStateOf("") }
     var renameTarget by remember { mutableStateOf<ScanFile?>(null) }
     var deleteTarget by remember { mutableStateOf<ScanFile?>(null) }
     var newName by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
 
-    val filteredFiles = remember(files, search, sort) {
-        val filtered = files.filter {
+    val folders = remember(files) {
+        rootDirectory.listFiles()
+            ?.filter { it.isDirectory }
+            ?.sortedBy { it.name.lowercase() }
+            ?: emptyList()
+    }
+
+    val visibleFiles = remember(files, selectedFolder) {
+        if (selectedFolder == null) {
+            files
+        } else {
+            files.filter {
+                File(it.path).parentFile?.name == selectedFolder
+            }
+        }
+    }
+
+    val filteredFiles = remember(visibleFiles, search, sort) {
+        val filtered = visibleFiles.filter {
             it.name.contains(search.trim(), ignoreCase = true)
         }
 
@@ -69,20 +95,36 @@ fun DocumentManagerScreen(
     ) {
         Spacer(Modifier.height(24.dp))
 
-        Text(
-            "Semua dokumen",
-            color = DMInk,
-            fontSize = 25.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    "Semua dokumen",
+                    color = DMInk,
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "${files.size} dokumen tersimpan",
+                    color = DMMuted,
+                    fontSize = 13.sp
+                )
+            }
 
-        Text(
-            "${files.size} dokumen tersimpan",
-            color = DMMuted,
-            fontSize = 13.sp
-        )
+            FilledIconButton(
+                onClick = {
+                    folderName = ""
+                    showCreateFolder = true
+                }
+            ) {
+                Icon(Icons.Default.CreateNewFolder, "Buat folder")
+            }
+        }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(14.dp))
 
         OutlinedTextField(
             value = search,
@@ -90,12 +132,12 @@ fun DocumentManagerScreen(
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("Cari nama dokumen...") },
             leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = "Cari")
+                Icon(Icons.Default.Search, "Cari")
             },
             trailingIcon = {
                 if (search.isNotEmpty()) {
                     IconButton(onClick = { search = "" }) {
-                        Icon(Icons.Default.Close, contentDescription = "Hapus pencarian")
+                        Icon(Icons.Default.Close, "Hapus pencarian")
                     }
                 }
             },
@@ -107,6 +149,55 @@ fun DocumentManagerScreen(
             )
         )
 
+        Spacer(Modifier.height(14.dp))
+
+        Text(
+            "Folder",
+            color = DMInk,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = selectedFolder == null,
+                onClick = { selectedFolder = null },
+                label = { Text("Semua") },
+                leadingIcon = {
+                    Icon(Icons.Default.FolderOpen, null)
+                }
+            )
+        }
+
+        if (folders.isNotEmpty()) {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 150.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(folders, key = { it.absolutePath }) { folder ->
+                    FolderRow(
+                        folder = folder,
+                        selected = selectedFolder == folder.name,
+                        count = files.count {
+                            File(it.path).parentFile?.name == folder.name
+                        },
+                        onSelect = {
+                            selectedFolder = folder.name
+                        },
+                        onRename = {
+                            renameFolder = folder.name
+                            folderName = folder.name
+                        },
+                        onDelete = {
+                            deleteFolder = folder.name
+                        }
+                    )
+                }
+            }
+        }
+
         Spacer(Modifier.height(12.dp))
 
         Row(
@@ -115,19 +206,15 @@ fun DocumentManagerScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "${filteredFiles.size} hasil",
-                color = DMMuted,
-                fontSize = 12.sp
+                if (selectedFolder == null) "Semua file" else selectedFolder!!,
+                color = DMInk,
+                fontWeight = FontWeight.Bold
             )
 
             Box {
                 OutlinedButton(onClick = { sortExpanded = true }) {
-                    Icon(
-                        Icons.Default.Sort,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Default.Sort, null)
+                    Spacer(Modifier.width(5.dp))
                     Text(sort)
                 }
 
@@ -153,58 +240,36 @@ fun DocumentManagerScreen(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
-
         if (message != null) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFFE8F4EC)
-                )
-            ) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        message!!,
-                        modifier = Modifier.weight(1f),
-                        color = Color(0xFF205D39),
-                        fontSize = 12.sp
-                    )
-                    IconButton(onClick = { message = null }) {
-                        Icon(Icons.Default.Close, contentDescription = "Tutup")
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
+            Text(
+                message!!,
+                color = DMBlue,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(vertical = 6.dp)
+            )
         }
 
         if (filteredFiles.isEmpty()) {
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(top = 55.dp),
+                    .padding(top = 35.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
                     Icons.Default.FolderOpen,
-                    contentDescription = null,
+                    null,
                     tint = Color(0xFF9AA8BC),
-                    modifier = Modifier.size(52.dp)
+                    modifier = Modifier.size(48.dp)
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    if (search.isBlank())
-                        "Belum ada dokumen"
-                    else
-                        "Dokumen tidak ditemukan",
+                    "Belum ada dokumen",
                     color = DMInk,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "Dokumen PDF akan ditampilkan di sini.",
+                    "Dokumen pada folder ini akan muncul di sini.",
                     color = DMMuted,
                     fontSize = 12.sp
                 )
@@ -220,6 +285,7 @@ fun DocumentManagerScreen(
                         file = file,
                         onOpen = { onOpen(file) },
                         onShare = { onShare(file) },
+                        onMove = { showMoveDialog = file },
                         onRename = {
                             renameTarget = file
                             newName = file.name.removeSuffix(".pdf")
@@ -231,60 +297,154 @@ fun DocumentManagerScreen(
         }
     }
 
-    renameTarget?.let { target ->
+    if (showCreateFolder) {
+        FolderNameDialog(
+            title = "Buat folder baru",
+            value = folderName,
+            onValueChange = { folderName = it },
+            onDismiss = { showCreateFolder = false },
+            onConfirm = {
+                val clean = cleanFolderName(folderName)
+                val destination = File(rootDirectory, clean)
+
+                when {
+                    clean.isBlank() -> message = "Nama folder tidak boleh kosong."
+                    destination.exists() -> message = "Folder sudah tersedia."
+                    destination.mkdirs() -> {
+                        message = "Folder berhasil dibuat."
+                        showCreateFolder = false
+                        onRefresh()
+                    }
+                    else -> message = "Gagal membuat folder."
+                }
+            }
+        )
+    }
+
+    renameFolder?.let { oldName ->
+        FolderNameDialog(
+            title = "Ganti nama folder",
+            value = folderName,
+            onValueChange = { folderName = it },
+            onDismiss = { renameFolder = null },
+            onConfirm = {
+                val clean = cleanFolderName(folderName)
+                val oldDir = File(rootDirectory, oldName)
+                val newDir = File(rootDirectory, clean)
+
+                when {
+                    clean.isBlank() -> message = "Nama folder tidak boleh kosong."
+                    clean == oldName -> {
+                        renameFolder = null
+                    }
+                    newDir.exists() -> message = "Nama folder sudah digunakan."
+                    oldDir.renameTo(newDir) -> {
+                        message = "Folder berhasil diganti nama."
+                        if (selectedFolder == oldName) selectedFolder = clean
+                        renameFolder = null
+                        onRefresh()
+                    }
+                    else -> message = "Gagal mengganti nama folder."
+                }
+            }
+        )
+    }
+
+    deleteFolder?.let { name ->
         AlertDialog(
-            onDismissRequest = { renameTarget = null },
-            title = { Text("Ganti nama dokumen") },
+            onDismissRequest = { deleteFolder = null },
+            title = { Text("Hapus folder?") },
             text = {
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    label = { Text("Nama dokumen") },
-                    singleLine = true
+                Text(
+                    "Folder $name hanya dapat dihapus jika masih kosong."
                 )
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        val oldFile = File(target.path)
-                        val cleanName = newName.trim()
-                            .removeSuffix(".pdf")
-                            .replace(Regex("[/\\\\:*?\"<>|]"), "_")
-
-                        if (cleanName.isBlank()) {
-                            message = "Nama dokumen tidak boleh kosong."
-                        } else {
-                            val destination = File(
-                                oldFile.parentFile,
-                                "$cleanName.pdf"
-                            )
-
-                            when {
-                                destination.absolutePath == oldFile.absolutePath -> {
-                                    message = "Nama dokumen tidak berubah."
-                                    renameTarget = null
-                                }
-                                destination.exists() -> {
-                                    message = "Nama tersebut sudah digunakan."
-                                }
-                                oldFile.renameTo(destination) -> {
-                                    message = "Nama dokumen berhasil diubah."
-                                    renameTarget = null
-                                    onRefresh()
-                                }
-                                else -> {
-                                    message = "Gagal mengganti nama dokumen."
-                                }
-                            }
-                        }
+                TextButton(onClick = {
+                    val dir = File(rootDirectory, name)
+                    if (dir.isDirectory && dir.listFiles()?.isEmpty() == true && dir.delete()) {
+                        message = "Folder berhasil dihapus."
+                        if (selectedFolder == name) selectedFolder = null
+                        onRefresh()
+                    } else {
+                        message = "Folder tidak kosong atau gagal dihapus."
                     }
-                ) {
-                    Text("Simpan")
+                    deleteFolder = null
+                }) {
+                    Text("Hapus", color = Color(0xFFD64545))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { renameTarget = null }) {
+                TextButton(onClick = { deleteFolder = null }) {
                     Text("Batal")
+                }
+            }
+        )
+    }
+
+    showMoveDialog?.let { file ->
+        AlertDialog(
+            onDismissRequest = { showMoveDialog = null },
+            title = { Text("Pindahkan dokumen") },
+            text = {
+                Column {
+                    Text("Pilih folder tujuan:")
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = {
+                        moveFile(file, rootDirectory, null) {
+                            message = it
+                            onRefresh()
+                        }
+                        showMoveDialog = null
+                    }) {
+                        Icon(Icons.Default.FolderOpen, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Penyimpanan utama")
+                    }
+                    folders.forEach { folder ->
+                        TextButton(onClick = {
+                            moveFile(file, rootDirectory, folder.name) {
+                                message = it
+                                onRefresh()
+                            }
+                            showMoveDialog = null
+                        }) {
+                            Icon(Icons.Default.Folder, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(folder.name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMoveDialog = null }) {
+                    Text("Tutup")
+                }
+            }
+        )
+    }
+
+    renameTarget?.let { target ->
+        FolderNameDialog(
+            title = "Ganti nama dokumen",
+            value = newName,
+            onValueChange = { newName = it },
+            onDismiss = { renameTarget = null },
+            onConfirm = {
+                val oldFile = File(target.path)
+                val clean = cleanFolderName(newName)
+                val destination = File(oldFile.parentFile, "$clean.pdf")
+
+                when {
+                    clean.isBlank() -> message = "Nama dokumen tidak boleh kosong."
+                    destination.exists() && destination.absolutePath != oldFile.absolutePath ->
+                        message = "Nama dokumen sudah digunakan."
+                    oldFile.renameTo(destination) -> {
+                        message = "Nama dokumen berhasil diubah."
+                        renameTarget = null
+                        onRefresh()
+                    }
+                    else -> message = "Gagal mengganti nama dokumen."
                 }
             }
         )
@@ -294,26 +454,17 @@ fun DocumentManagerScreen(
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text("Hapus dokumen?") },
-            text = {
-                Text(
-                    "Dokumen ${target.name} akan dihapus permanen dari penyimpanan ScanPro."
-                )
-            },
+            text = { Text("Dokumen ${target.name} akan dihapus permanen.") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        val file = File(target.path)
-
-                        if (file.exists() && file.delete()) {
-                            message = "Dokumen berhasil dihapus."
-                            deleteTarget = null
-                            onRefresh()
-                        } else {
-                            message = "Gagal menghapus dokumen."
-                            deleteTarget = null
-                        }
+                TextButton(onClick = {
+                    if (File(target.path).delete()) {
+                        message = "Dokumen berhasil dihapus."
+                        onRefresh()
+                    } else {
+                        message = "Gagal menghapus dokumen."
                     }
-                ) {
+                    deleteTarget = null
+                }) {
                     Text("Hapus", color = Color(0xFFD64545))
                 }
             },
@@ -326,29 +477,158 @@ fun DocumentManagerScreen(
     }
 }
 
+private fun cleanFolderName(value: String): String {
+    return value.trim()
+        .replace(Regex("[/\\\\:*?\"<>|]"), "_")
+}
+
+private fun moveFile(
+    file: ScanFile,
+    root: File,
+    folderName: String?,
+    result: (String) -> Unit
+) {
+    val source = File(file.path)
+    val destinationDir = if (folderName == null) {
+        root
+    } else {
+        File(root, folderName)
+    }
+
+    if (!destinationDir.exists()) destinationDir.mkdirs()
+
+    val destination = File(destinationDir, source.name)
+
+    when {
+        source.parentFile?.absolutePath == destinationDir.absolutePath ->
+            result("Dokumen sudah berada di folder tersebut.")
+        destination.exists() ->
+            result("Nama file sudah ada di folder tujuan.")
+        source.renameTo(destination) ->
+            result("Dokumen berhasil dipindahkan.")
+        else ->
+            result("Gagal memindahkan dokumen.")
+    }
+}
+
+@Composable
+private fun FolderNameDialog(
+    title: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                label = { Text("Nama") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Simpan")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Batal")
+            }
+        }
+    )
+}
+
+@Composable
+private fun FolderRow(
+    folder: File,
+    selected: Boolean,
+    count: Int,
+    onSelect: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) Color(0xFFE5EDFF) else Color.White
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onSelect)
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Folder,
+                null,
+                tint = DMBlue
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    folder.name,
+                    color = DMInk,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                )
+                Text(
+                    "$count dokumen",
+                    color = DMMuted,
+                    fontSize = 11.sp
+                )
+            }
+            Box {
+                IconButton(onClick = { expanded = true }) {
+                    Icon(Icons.Default.MoreVert, "Menu folder")
+                }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Ganti nama") },
+                        onClick = {
+                            expanded = false
+                            onRename()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Hapus folder kosong") },
+                        onClick = {
+                            expanded = false
+                            onDelete()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun DocumentCard(
     file: ScanFile,
     onOpen: () -> Unit,
     onShare: () -> Unit,
+    onMove: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
-
+    var expanded by remember { mutableStateOf(false) }
     val sizeBytes = File(file.path).length()
     val sizeText = if (sizeBytes >= 1024 * 1024) {
-        String.format(
-            java.util.Locale.US,
-            "%.2f MB",
-            sizeBytes / (1024.0 * 1024.0)
-        )
+        String.format(java.util.Locale.US, "%.2f MB", sizeBytes / (1024.0 * 1024.0))
     } else {
-        String.format(
-            java.util.Locale.US,
-            "%.1f KB",
-            sizeBytes / 1024.0
-        )
+        String.format(java.util.Locale.US, "%.1f KB", sizeBytes / 1024.0)
     }
 
     Card(
@@ -362,29 +642,14 @@ private fun DocumentCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .background(
-                        Color(0xFFFFEEEE),
-                        RoundedCornerShape(12.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.PictureAsPdf,
-                    contentDescription = "PDF",
-                    tint = Color(0xFFD64B4B),
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
+            Icon(
+                Icons.Default.PictureAsPdf,
+                null,
+                tint = Color(0xFFD64B4B),
+                modifier = Modifier.size(28.dp)
+            )
             Spacer(Modifier.width(12.dp))
-
-            Column(
-                Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+            Column(Modifier.weight(1f)) {
                 Text(
                     file.name,
                     color = DMInk,
@@ -398,46 +663,35 @@ private fun DocumentCard(
                     fontSize = 11.sp
                 )
             }
-
             IconButton(onClick = onShare) {
-                Icon(
-                    Icons.Default.Share,
-                    contentDescription = "Bagikan",
-                    tint = DMBlue
-                )
+                Icon(Icons.Default.Share, "Bagikan", tint = DMBlue)
             }
-
             Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = "Menu dokumen",
-                        tint = DMMuted
-                    )
+                IconButton(onClick = { expanded = true }) {
+                    Icon(Icons.Default.MoreVert, "Menu dokumen")
                 }
-
                 DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Ganti nama") },
-                        leadingIcon = {
-                            Icon(Icons.Default.Edit, contentDescription = null)
-                        },
+                        text = { Text("Pindahkan ke folder") },
                         onClick = {
-                            menuExpanded = false
+                            expanded = false
+                            onMove()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Ganti nama") },
+                        onClick = {
+                            expanded = false
                             onRename()
                         }
                     )
-
                     DropdownMenuItem(
                         text = { Text("Hapus") },
-                        leadingIcon = {
-                            Icon(Icons.Default.Delete, contentDescription = null)
-                        },
                         onClick = {
-                            menuExpanded = false
+                            expanded = false
                             onDelete()
                         }
                     )
