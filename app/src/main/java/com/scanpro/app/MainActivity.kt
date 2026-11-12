@@ -67,6 +67,7 @@ fun ScanProApp(activity: ComponentActivity) {
     var status by remember { mutableStateOf<String?>(null) }
     var ocrText by remember { mutableStateOf<String?>(null) }
     var selectedTab by remember { mutableStateOf(0) }
+    var showPdfStudio by remember { mutableStateOf(false) }
 
     val scanner = remember {
         val options = GmsDocumentScannerOptions.Builder()
@@ -107,19 +108,51 @@ fun ScanProApp(activity: ComponentActivity) {
     MaterialTheme(colorScheme = lightColorScheme(primary = Blue, background = Canvas, surface = Color.White)) {
         Scaffold(
             containerColor = Canvas,
-            bottomBar = {
-                NavigationBar(containerColor = Color.White) {
+          bottomBar = {
+    if (!showPdfStudio) {
+        NavigationBar(containerColor = Color.White) {
                     NavigationBarItem(selected = selectedTab == 0, onClick = { selectedTab = 0 }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("Beranda") })
                     NavigationBarItem(selected = selectedTab == 1, onClick = { selectedTab = 1 }, icon = { Icon(Icons.Default.Folder, null) }, label = { Text("Dokumen") })
                     NavigationBarItem(selected = selectedTab == 2, onClick = { selectedTab = 2 }, icon = { Icon(Icons.Default.Settings, null) }, label = { Text("Pengaturan") })
                 }
             }
+          }
         ) { padding ->
-            when (selectedTab) {
-                0 -> HomeScreen(files, busy, status, onScan = { startScan() }, onOpen = { openPdf(context, it) }, onShare = { sharePdf(context, it) }, onOcr = { file -> runOcr(context, file) { ocrText = it } }, onDismiss = { status = null; ocrText = null }, padding = padding)
-                1 -> DocumentsScreen(files, onOpen = { openPdf(context, it) }, onShare = { sharePdf(context, it) }, padding = padding)
-                else -> SettingsScreen(padding)
-            }
+if (showPdfStudio) {
+    PdfStudioScreen(
+        context = context,
+        files = files,
+        onBack = { showPdfStudio = false },
+        onComplete = { result ->
+            files = loadFiles(context)
+            status = result
+            selectedTab = 0
+            showPdfStudio = false
+        }
+    )
+} else {
+    when (selectedTab) {
+        0 -> HomeScreen(
+            files, busy, status,
+            onScan = { startScan() },
+            onOpen = { openPdf(context, it) },
+            onShare = { sharePdf(context, it) },
+            onOcr = { file ->
+                runOcr(context, file) { ocrText = it }
+            },
+            onDismiss = { status = null; ocrText = null },
+            onPdfStudio = { showPdfStudio = true },
+            padding = padding
+        )
+        1 -> DocumentsScreen(
+            files,
+            onOpen = { openPdf(context, it) },
+            onShare = { sharePdf(context, it) },
+            padding = padding
+        )
+        else -> SettingsScreen(padding)
+    }
+}
         }
         ocrText?.let { text ->
             AlertDialog(onDismissRequest = { ocrText = null }, title = { Text("Hasil OCR") }, text = { Text(text, maxLines = 18) }, confirmButton = { TextButton(onClick = { android.content.ClipData.newPlainText("OCR ScanPro", text).also { clip -> (context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(clip) }; ocrText = null }) { Text("Salin teks") } }, dismissButton = { TextButton(onClick = { ocrText = null }) { Text("Tutup") } })
@@ -128,7 +161,7 @@ fun ScanProApp(activity: ComponentActivity) {
 }
 
 @Composable
-private fun HomeScreen(files: List<ScanFile>, busy: Boolean, status: String?, onScan: () -> Unit, onOpen: (ScanFile) -> Unit, onShare: (ScanFile) -> Unit, onOcr: (ScanFile) -> Unit, onDismiss: () -> Unit, padding: PaddingValues) {
+private fun HomeScreen(files: List<ScanFile>, busy: Boolean, status: String?, onScan: () -> Unit, onOpen: (ScanFile) -> Unit, onShare: (ScanFile) -> Unit, onOcr: (ScanFile) -> Unit, onDismiss: () -> Unit, onPdfStudio: () -> Unit,padding: PaddingValues) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp), contentPadding = PaddingValues(top = 28.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
@@ -157,7 +190,12 @@ private fun HomeScreen(files: List<ScanFile>, busy: Boolean, status: String?, on
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("Alat cepat", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold); Text("FITUR", color = Muted, fontSize = 10.sp, letterSpacing = 1.sp) } }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                QuickTool("PDF", Icons.Default.PictureAsPdf, Modifier.weight(1f))
+      QuickTool(
+    "PDF",
+    Icons.Default.PictureAsPdf,
+    Modifier.weight(1f),
+    onClick = onPdfStudio
+)
                 QuickTool("OCR", Icons.Default.TextSnippet, Modifier.weight(1f))
                 QuickTool("Galeri", Icons.Default.PhotoLibrary, Modifier.weight(1f))
                 QuickTool("Bagikan", Icons.Default.Share, Modifier.weight(1f))
@@ -169,8 +207,19 @@ private fun HomeScreen(files: List<ScanFile>, busy: Boolean, status: String?, on
 }
 
 @Composable
-private fun QuickTool(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier) {
-    Column(modifier.background(Color.White, RoundedCornerShape(16.dp)).padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun QuickTool(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier,
+    onClick: () -> Unit = {}
+){
+    Column(
+    modifier
+        .clickable(onClick = onClick)
+        .background(Color.White, RoundedCornerShape(16.dp))
+        .padding(vertical = 14.dp),
+    horizontalAlignment = Alignment.CenterHorizontally
+) {
         Icon(icon, null, tint = Blue, modifier = Modifier.size(23.dp)); Spacer(Modifier.height(7.dp)); Text(label, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
     }
 }
